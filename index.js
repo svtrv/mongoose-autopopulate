@@ -1,5 +1,5 @@
 var mongoose = require('mongoose');
-
+var depth = 1, populateLevel;
 module.exports = function(schema) {
   var pathsToPopulate = [];
 
@@ -35,76 +35,33 @@ module.exports = function(schema) {
   }
 
   var autopopulateHandler = function() {
-    if (this._mongooseOptions && this._mongooseOptions.lean) return;
+    if(!populateLevel ||
+      (populateLevel && schema.statics.populateLevel && schema.statics.populateLevel != populateLevel)) {
+      var firsttime = true;
+      populateLevel = schema.statics.populateLevel;
+      depth = 1;
+    }
+
+    depth++;
+
+	if (this._mongooseOptions && this._mongooseOptions.lean) return;
     var numPaths = pathsToPopulate.length;
     for (var i = 0; i < numPaths; ++i) {
-      processOption.call(this,
-        pathsToPopulate[i].autopopulate, pathsToPopulate[i].options);
+	    console.log('populateLevel set to', populateLevel, 'and depth now is', depth, 'so we',
+        ((depth<=populateLevel)? 'populate': 'do not populate'), pathsToPopulate[i].options.path)
+
+        if(depth<=populateLevel)
+          processOption.call(this,
+              pathsToPopulate[i].autopopulate,
+              pathsToPopulate[i].options);
     }
+
+    if(firsttime)
+      firsttime = false;
+    else depth--;
   };
 
   schema.
     pre('find', autopopulateHandler).
     pre('findOne', autopopulateHandler);
 };
-
-function defaultOptions(pathname, v) {
-  var ret = { path: pathname };
-  if (v.ref) {
-    ret.model = v.ref;
-  }
-  return ret;
-}
-
-function processOption(value, options) {
-  switch (typeof value) {
-    case 'function':
-      handleFunction.call(this, value, options);
-      break;
-    case 'object':
-      handleObject.call(this, value, options);
-      break;
-    default:
-      handlePrimitive.call(this, value, options);
-      break;
-  }
-}
-
-function handlePrimitive(value, options) {
-  if (value) {
-    this.populate(options);
-  }
-}
-
-function handleObject(value, optionsToUse) {
-  mergeOptions(optionsToUse, value);
-  this.populate(optionsToUse);
-}
-
-function handleFunction(fn, options) {
-  var val = fn.call(this);
-  processOption.call(this, val, options);
-}
-
-function mergeOptions(destination, source) {
-  var keys = Object.keys(source);
-  var numKeys = keys.length;
-  for (var i = 0; i < numKeys; ++i) {
-    destination[keys[i]] = source[keys[i]];
-  }
-}
-
-function eachPathRecursive(schema, handler, path) {
-  if (!path) {
-    path = [];
-  }
-  schema.eachPath(function(pathname, schemaType) {
-    path.push(pathname);
-    if (schemaType.schema) {
-      eachPathRecursive(schemaType.schema, handler, path);
-    } else {
-      handler(path.join('.'), schemaType);
-    }
-    path.pop();
-  });
-}
